@@ -5,7 +5,7 @@
 # A command-line tool to monitor Hyperliquid wallet/vault positions and PnL
 # ══════════════════════════════════════════════════════════════════════════════
 
-VERSION="1.2.1"
+VERSION="1.3.0"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Check required dependencies
@@ -47,6 +47,7 @@ ADDRESS=""
 USE_TESTNET=false
 OUTPUT_JSON=false
 NO_COLOR=false
+SHOW_VAULTS=false
 API_URL="https://api.hyperliquid.xyz/info"
 TESTNET_API_URL="https://api.hyperliquid-testnet.xyz/info"
 
@@ -135,6 +136,7 @@ show_help() {
     echo ""
     echo -e "${WHITE}OPTIONS${NC}"
     echo -e "  ${YELLOW}-w, --watch <seconds>${NC}  Auto-refresh every N seconds (min: 5)"
+    echo -e "  ${YELLOW}-V, --vaults${NC}           Show vault investments for wallet address"
     echo -e "  ${YELLOW}-t, --testnet${NC}          Use testnet API instead of mainnet"
     echo -e "  ${YELLOW}-j, --json${NC}             Output raw JSON (for scripting)"
     echo -e "  ${YELLOW}    --no-color${NC}         Disable colored output"
@@ -156,6 +158,9 @@ show_help() {
     echo ""
     echo -e "  ${DIM}# Pipe to file (auto-disables colors)${NC}"
     echo -e "  ${GREEN}hl-pnl 0x... > positions.txt${NC}"
+    echo ""
+    echo -e "  ${DIM}# Show vault investments for a wallet${NC}"
+    echo -e "  ${GREEN}hl-pnl 0x... --vaults${NC}"
     echo ""
     echo -e "${WHITE}OUTPUT FIELDS${NC}"
     echo -e "  ${YELLOW}Account Value${NC}     Total account value in USD"
@@ -226,6 +231,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -j|--json)
             OUTPUT_JSON=true
+            shift
+            ;;
+        -V|--vaults)
+            SHOW_VAULTS=true
             shift
             ;;
         --no-color)
@@ -342,6 +351,170 @@ fetch_data() {
             return 3
             ;;
     esac
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Fetch user's vault investments
+# ══════════════════════════════════════════════════════════════════════════════
+fetch_user_vaults() {
+    local temp_file=$(mktemp)
+    local http_code
+
+    # Call userVaultEquities API
+    http_code=$(curl -s -w "%{http_code}" \
+        --connect-timeout 10 \
+        --max-time 30 \
+        -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d "{\"type\":\"userVaultEquities\",\"user\":\"$ADDRESS\"}" \
+        -o "$temp_file" 2>/dev/null)
+
+    local curl_exit=$?
+
+    if [[ $curl_exit -ne 0 ]]; then
+        rm -f "$temp_file"
+        return 2
+    fi
+
+    if [[ "$http_code" == "200" ]]; then
+        if jq -e . "$temp_file" >/dev/null 2>&1; then
+            cat "$temp_file"
+            rm -f "$temp_file"
+            return 0
+        fi
+    fi
+
+    rm -f "$temp_file"
+    return 3
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Fetch vault details
+# ══════════════════════════════════════════════════════════════════════════════
+fetch_vault_details() {
+    local vault_address="$1"
+    local temp_file=$(mktemp)
+    local http_code
+
+    # Call vaultDetails API
+    http_code=$(curl -s -w "%{http_code}" \
+        --connect-timeout 10 \
+        --max-time 30 \
+        -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d "{\"type\":\"vaultDetails\",\"vaultAddress\":\"$vault_address\",\"user\":\"$ADDRESS\"}" \
+        -o "$temp_file" 2>/dev/null)
+
+    local curl_exit=$?
+
+    if [[ $curl_exit -ne 0 ]]; then
+        rm -f "$temp_file"
+        return 2
+    fi
+
+    if [[ "$http_code" == "200" ]]; then
+        if jq -e . "$temp_file" >/dev/null 2>&1; then
+            cat "$temp_file"
+            rm -f "$temp_file"
+            return 0
+        fi
+    fi
+
+    rm -f "$temp_file"
+    return 3
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Display vault investments
+# ══════════════════════════════════════════════════════════════════════════════
+display_vault_investments() {
+    local vaults_response="$1"
+
+    # Check if user has any vault investments
+    local vault_count=$(echo "$vaults_response" | jq -r 'length')
+
+    if [[ "$vault_count" -eq 0 || "$vaults_response" == "[]" ]]; then
+        echo ""
+        echo -e "${CYAN}────────────────────────────────────────────────────────────────────────────────────────${NC}"
+        echo -e "${WHITE}${BOLD}VAULT INVESTMENTS${NC}"
+        echo -e "${CYAN}────────────────────────────────────────────────────────────────────────────────────────${NC}"
+        echo ""
+        echo -e "${DIM}No vault investments found for this wallet${NC}"
+        return 0
+    fi
+
+    echo ""
+    echo -e "${CYAN}────────────────────────────────────────────────────────────────────────────────────────${NC}"
+    echo -e "${WHITE}${BOLD}VAULT INVESTMENTS (${vault_count})${NC}"
+    echo -e "${CYAN}────────────────────────────────────────────────────────────────────────────────────────${NC}"
+    echo ""
+    echo -e "${DIM}VAULT                          YOUR EQUITY           YOUR PNL           ALL-TIME PNL${NC}"
+    echo -e "${DIM}─────────────────────────────────────────────────────────────────────────────────────────${NC}"
+
+    local total_vault_equity=0
+    local total_vault_pnl=0
+
+    # Process each vault
+    echo "$vaults_response" | jq -r '.[] | [.vaultAddress, .equity] | @tsv' | while IFS=$'\t' read -r vault_addr equity; do
+        # Fetch vault details
+        local vault_details
+        vault_details=$(fetch_vault_details "$vault_addr")
+
+        if [[ $? -eq 0 && -n "$vault_details" ]]; then
+            # Parse vault info (single jq call)
+            local vault_info
+            vault_info=$(echo "$vault_details" | jq -r '[
+                .name // "Unknown",
+                .followerState.pnl // 0,
+                .followerState.allTimePnl // 0,
+                .followerState.vaultEquity // 0
+            ] | @tsv')
+
+            local vault_name user_pnl all_time_pnl vault_equity
+            IFS=$'\t' read -r vault_name user_pnl all_time_pnl vault_equity <<< "$vault_info"
+
+            # Use vault equity from details if available (more accurate)
+            if [[ -n "$vault_equity" && "$vault_equity" != "0" && "$vault_equity" != "null" ]]; then
+                equity="$vault_equity"
+            fi
+
+            # Format values
+            local fmt_equity=$(format_number "$equity")
+            local fmt_pnl=$(format_number "$user_pnl")
+            local fmt_all_time=$(format_number "$all_time_pnl")
+
+            # Truncate vault name if too long
+            local display_name="$vault_name"
+            if [[ ${#display_name} -gt 28 ]]; then
+                display_name="${display_name:0:25}..."
+            fi
+
+            # Determine PnL colors
+            local pnl_color="$GREEN"
+            local pnl_sign="+"
+            if (( $(awk "BEGIN {print ($user_pnl < 0)}") )); then
+                pnl_color="$RED"
+                pnl_sign=""
+            fi
+
+            local all_time_color="$GREEN"
+            local all_time_sign="+"
+            if (( $(awk "BEGIN {print ($all_time_pnl < 0)}") )); then
+                all_time_color="$RED"
+                all_time_sign=""
+            fi
+
+            printf "${WHITE}%-30s${NC} \$%-20s ${pnl_color}%s\$%-16s${NC} ${all_time_color}%s\$%s${NC}\n" \
+                "$display_name" "$fmt_equity" "$pnl_sign" "$fmt_pnl" "$all_time_sign" "$fmt_all_time"
+        else
+            # Fallback if vault details fetch fails
+            local fmt_equity=$(format_number "$equity")
+            printf "${WHITE}%-30s${NC} \$%-20s ${DIM}N/A${NC}                ${DIM}N/A${NC}\n" \
+                "${vault_addr:0:10}...${vault_addr: -6}" "$fmt_equity"
+        fi
+    done
+
+    echo ""
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -543,6 +716,18 @@ fetch_and_display() {
 
     # Formatted output
     display_formatted "$response"
+
+    # Show vault investments if flag is set
+    if [[ "$SHOW_VAULTS" == true ]]; then
+        local vaults_response
+        vaults_response=$(fetch_user_vaults)
+        if [[ $? -eq 0 ]]; then
+            display_vault_investments "$vaults_response"
+        else
+            echo ""
+            echo -e "${YELLOW}Warning: Could not fetch vault investments${NC}"
+        fi
+    fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
