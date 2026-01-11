@@ -37,17 +37,23 @@ On Ubuntu/Debian:
 sudo apt-get install jq
 ```
 
-### Install hl-pnl
+### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/born1337/hyperliquid-pnl-cli/main/install.sh | bash
+```
+
+### Manual Install
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/hl-pnl.git
-cd hl-pnl
+git clone https://github.com/born1337/hyperliquid-pnl-cli.git
+cd hyperliquid-pnl-cli
 
 # Make executable
 chmod +x hl-pnl
 
-# Optional: Add to PATH for global access
+# Add to PATH for global access
 sudo ln -s $(pwd)/hl-pnl /usr/local/bin/hl-pnl
 ```
 
