@@ -2,7 +2,7 @@
 
 A command-line tool to monitor Hyperliquid wallet and vault positions with real-time PnL tracking.
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
@@ -265,29 +265,7 @@ sudo apt-get install gawk
 
 ## Changelog
 
-### v1.2.0
-- Removed `bc` dependency - now uses only `awk` for calculations
-- Added dependency check at startup with helpful install instructions
-- Significant performance improvement (~10x faster for many positions)
-  - Consolidated multiple jq calls into single calls
-  - Reduced process spawns per position from ~10 to ~3
-- Removed dead code and improved maintainability
-
-### v1.1.0
-- Added `--testnet` flag for testnet API support
-- Added `--json` flag for raw JSON output
-- Added `--no-color` flag (auto-detects piping)
-- Added curl timeout (10s connect, 30s max)
-- Added detailed error messages for network/API failures
-- Added exit codes for scripting
-- Added number formatting with commas
-- Improved code structure and maintainability
-
-### v1.0.0
-- Initial release
-- Basic position monitoring
-- Watch mode
-- Color-coded output
+See [CHANGELOG.md](CHANGELOG.md) for a detailed history of changes.
 
 ## Contributing
 

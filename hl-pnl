@@ -5,7 +5,7 @@
 # A command-line tool to monitor Hyperliquid wallet/vault positions and PnL
 # ══════════════════════════════════════════════════════════════════════════════
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Check required dependencies
@@ -64,12 +64,12 @@ setup_colors() {
         BOLD=''
         NC=''
     else
-        GREEN='\033[0;32m'
-        RED='\033[0;31m'
-        YELLOW='\033[0;33m'
-        CYAN='\033[0;36m'
-        MAGENTA='\033[0;35m'
-        WHITE='\033[1;37m'
+        GREEN='\033[0;92m'
+        RED='\033[0;91m'
+        YELLOW='\033[0;93m'
+        CYAN='\033[0;96m'
+        MAGENTA='\033[0;95m'
+        WHITE='\033[1;97m'
         DIM='\033[0;90m'
         BOLD='\033[1m'
         NC='\033[0m'
@@ -471,15 +471,15 @@ display_formatted() {
             roe_color="$GREEN"; roe_sign="+"
         fi
 
-        # Computed values using awk
-        local abs_size=$(awk "BEGIN {printf \"%.4f\", ($szi < 0) ? -($szi) : $szi}")
-        local roe_pct=$(awk "BEGIN {printf \"%.1f\", $roe * 100}")
-        local fmt_entry=$(awk "BEGIN {printf \"%.4f\", $entry_px}")
+        # Computed values using awk (2 decimal places)
+        local abs_size=$(awk "BEGIN {printf \"%.2f\", ($szi < 0) ? -($szi) : $szi}")
+        local roe_pct=$(awk "BEGIN {printf \"%.2f\", $roe * 100}")
+        local fmt_entry=$(awk "BEGIN {printf \"%.2f\", $entry_px}")
         local fmt_value=$(format_number "$pos_value")
         local fmt_pnl=$(format_number "$pnl")
 
-        # Print position row
-        printf "${YELLOW}%-8s${NC} ${side_color}%-6s${NC} ${MAGENTA}%-6s${NC} %-18s \$%-13s \$%-15s ${pnl_color}%s\$%-12s${NC} ${roe_color}%s%s%%${NC}\n" \
+        # Print position row (colors match Hyperliquid UI)
+        printf "${WHITE}%-8s${NC} ${side_color}%-6s${NC} ${DIM}%-6s${NC} ${CYAN}%-18s${NC} \$%-13s \$%-15s ${pnl_color}%s\$%-12s${NC} ${pnl_color}(%s%s%%)${NC}\n" \
             "$coin" "$side" "${lev}x" "$abs_size" "$fmt_entry" "$fmt_value" "$pnl_sign" "$fmt_pnl" "$roe_sign" "$roe_pct"
     done
 
