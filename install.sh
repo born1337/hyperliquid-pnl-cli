@@ -8,7 +8,6 @@
 set -e
 
 REPO="born1337/hyperliquid-pnl-cli"
-INSTALL_DIR="/usr/local/bin"
 BINARY_NAME="hl-pnl"
 
 # Colors
@@ -17,7 +16,38 @@ GREEN='\033[0;92m'
 YELLOW='\033[0;93m'
 CYAN='\033[0;96m'
 WHITE='\033[1;97m'
+DIM='\033[0;90m'
 NC='\033[0m'
+
+# Default install directory
+INSTALL_DIR="/usr/local/bin"
+USER_INSTALL=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --user|-u)
+            USER_INSTALL=true
+            INSTALL_DIR="$HOME/.local/bin"
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: install.sh [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --user, -u    Install to ~/.local/bin (no sudo required)"
+            echo "  --help, -h    Show this help message"
+            echo ""
+            echo "Default: Install to /usr/local/bin (requires sudo)"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
 
 echo -e "${CYAN}══════════════════════════════════════════════════════════════════${NC}"
 echo -e "${WHITE}hl-pnl Installer${NC}"
@@ -69,6 +99,12 @@ fi
 
 echo ""
 
+# Create install directory if needed (for user install)
+if [[ "$USER_INSTALL" == true ]] && [[ ! -d "$INSTALL_DIR" ]]; then
+    echo -e "${WHITE}Creating ${INSTALL_DIR}...${NC}"
+    mkdir -p "$INSTALL_DIR"
+fi
+
 # Download the script
 echo -e "${WHITE}Downloading hl-pnl...${NC}"
 
@@ -90,11 +126,12 @@ echo ""
 echo -e "${WHITE}Installing to ${INSTALL_DIR}...${NC}"
 
 # Check if we need sudo
-if [ -w "$INSTALL_DIR" ]; then
+if [ -w "$INSTALL_DIR" ] || [[ "$USER_INSTALL" == true ]]; then
     mv "$TMP_FILE" "${INSTALL_DIR}/${BINARY_NAME}"
     chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 else
     echo -e "${YELLOW}Requires sudo to install to ${INSTALL_DIR}${NC}"
+    echo -e "${DIM}Tip: Use --user flag to install without sudo${NC}"
     sudo mv "$TMP_FILE" "${INSTALL_DIR}/${BINARY_NAME}"
     sudo chmod +x "${INSTALL_DIR}/${BINARY_NAME}"
 fi
@@ -102,8 +139,14 @@ fi
 echo -e "${GREEN}Installation successful!${NC}"
 echo ""
 
+# Check if install dir is in PATH
+IN_PATH=false
+if echo "$PATH" | grep -q "$INSTALL_DIR"; then
+    IN_PATH=true
+fi
+
 # Verify installation
-if command -v "$BINARY_NAME" &>/dev/null; then
+if [[ "$IN_PATH" == true ]] && command -v "$BINARY_NAME" &>/dev/null; then
     VERSION=$("$BINARY_NAME" --version 2>/dev/null || echo "unknown")
     echo -e "${CYAN}══════════════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}✓ hl-pnl installed successfully!${NC}"
@@ -118,6 +161,35 @@ if command -v "$BINARY_NAME" &>/dev/null; then
     echo -e "  ${GREEN}hl-pnl --help${NC}                 Show all options"
     echo ""
 else
-    echo -e "${YELLOW}Warning: hl-pnl installed but not found in PATH${NC}"
-    echo -e "You may need to add ${INSTALL_DIR} to your PATH"
+    echo -e "${CYAN}══════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}✓ hl-pnl installed to ${INSTALL_DIR}/${BINARY_NAME}${NC}"
+    echo -e "${CYAN}══════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    if [[ "$IN_PATH" == false ]]; then
+        echo -e "${YELLOW}Note: ${INSTALL_DIR} is not in your PATH${NC}"
+        echo ""
+        echo -e "${WHITE}Add to PATH by running:${NC}"
+
+        # Detect shell
+        SHELL_NAME=$(basename "$SHELL")
+        case "$SHELL_NAME" in
+            zsh)
+                echo -e "  ${GREEN}echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.zshrc${NC}"
+                echo -e "  ${GREEN}source ~/.zshrc${NC}"
+                ;;
+            bash)
+                echo -e "  ${GREEN}echo 'export PATH=\"${INSTALL_DIR}:\$PATH\"' >> ~/.bashrc${NC}"
+                echo -e "  ${GREEN}source ~/.bashrc${NC}"
+                ;;
+            *)
+                echo -e "  ${GREEN}export PATH=\"${INSTALL_DIR}:\$PATH\"${NC}"
+                ;;
+        esac
+        echo ""
+    fi
+
+    echo -e "${WHITE}Or run directly:${NC}"
+    echo -e "  ${GREEN}${INSTALL_DIR}/${BINARY_NAME} --help${NC}"
+    echo ""
 fi
