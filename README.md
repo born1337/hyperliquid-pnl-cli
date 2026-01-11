@@ -213,15 +213,19 @@ NET PNL:            +$90,038.06
 
 ## API
 
-This tool uses the Hyperliquid public API:
+This tool uses the Hyperliquid public API. No authentication required.
 
 | Network | Endpoint |
 |---------|----------|
 | Mainnet | `https://api.hyperliquid.xyz/info` |
 | Testnet | `https://api.hyperliquid-testnet.xyz/info` |
 
-**Request Type:** `clearinghouseState`
-**Authentication:** None required (public data)
+**Endpoints used:**
+- `clearinghouseState` - Account positions and margin info
+- `userVaultEquities` - User's vault investments
+- `vaultDetails` - Vault name and user PnL
+
+For detailed API documentation, see **[API.md](API.md)**.
 
 ### Rate Limits
 
