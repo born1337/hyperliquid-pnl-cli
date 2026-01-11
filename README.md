@@ -43,6 +43,14 @@ sudo apt-get install jq
 curl -fsSL https://raw.githubusercontent.com/born1337/hyperliquid-pnl-cli/main/install.sh | bash
 ```
 
+### User Install (No sudo)
+
+Install to `~/.local/bin` without requiring sudo:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/born1337/hyperliquid-pnl-cli/main/install.sh | bash -s -- --user
+```
+
 ### Manual Install
 
 ```bash
