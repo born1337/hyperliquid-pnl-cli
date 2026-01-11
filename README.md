@@ -2,7 +2,7 @@
 
 A command-line tool to monitor Hyperliquid wallet and vault positions with real-time PnL tracking.
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 
@@ -25,7 +25,7 @@ A command-line tool to monitor Hyperliquid wallet and vault positions with real-
 - `bash` (version 4.0+)
 - `curl`
 - `jq` (JSON processor)
-- `bc` (calculator)
+- `awk` (usually pre-installed)
 
 On macOS:
 ```bash
@@ -34,7 +34,7 @@ brew install jq
 
 On Ubuntu/Debian:
 ```bash
-sudo apt-get install jq bc
+sudo apt-get install jq
 ```
 
 ### Install hl-pnl
@@ -255,17 +255,6 @@ sudo apt-get install jq
 sudo pacman -S jq
 ```
 
-### "bc: command not found"
-
-Install bc:
-```bash
-# macOS (usually pre-installed)
-brew install bc
-
-# Ubuntu/Debian
-sudo apt-get install bc
-```
-
 ### Numbers showing without commas
 
 Ensure your version of `awk` supports the formatting. GNU awk (gawk) is recommended:
@@ -275,6 +264,14 @@ sudo apt-get install gawk
 ```
 
 ## Changelog
+
+### v1.2.0
+- Removed `bc` dependency - now uses only `awk` for calculations
+- Added dependency check at startup with helpful install instructions
+- Significant performance improvement (~10x faster for many positions)
+  - Consolidated multiple jq calls into single calls
+  - Reduced process spawns per position from ~10 to ~3
+- Removed dead code and improved maintainability
 
 ### v1.1.0
 - Added `--testnet` flag for testnet API support

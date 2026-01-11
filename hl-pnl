@@ -5,7 +5,41 @@
 # A command-line tool to monitor Hyperliquid wallet/vault positions and PnL
 # ══════════════════════════════════════════════════════════════════════════════
 
-VERSION="1.1.0"
+VERSION="1.2.0"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Check required dependencies
+# ══════════════════════════════════════════════════════════════════════════════
+check_dependencies() {
+    local missing=()
+
+    if ! command -v curl &>/dev/null; then
+        missing+=("curl")
+    fi
+
+    if ! command -v jq &>/dev/null; then
+        missing+=("jq")
+    fi
+
+    if ! command -v awk &>/dev/null; then
+        missing+=("awk")
+    fi
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "Error: Missing required dependencies: ${missing[*]}" >&2
+        echo "" >&2
+        echo "Install with:" >&2
+        if [[ "$(uname)" == "Darwin" ]]; then
+            echo "  brew install ${missing[*]}" >&2
+        else
+            echo "  sudo apt-get install ${missing[*]}" >&2
+        fi
+        exit 1
+    fi
+}
+
+# Run dependency check immediately
+check_dependencies
 
 # Default values
 WATCH_INTERVAL=0
@@ -70,8 +104,8 @@ format_number() {
             result = result substr(integer, i, 1)
         }
 
-        # Handle negative numbers
-        if (result ~ /^,-/) {
+        # Handle negative numbers (remove incorrectly placed comma after minus)
+        if (result ~ /^-,/) {
             result = "-" substr(result, 3)
         }
 
@@ -324,13 +358,19 @@ display_formatted() {
         echo ""
     fi
 
-    # Parse data
-    local account_value=$(echo "$response" | jq -r '.marginSummary.accountValue // 0')
-    local total_position=$(echo "$response" | jq -r '.marginSummary.totalNtlPos // 0')
-    local margin_used=$(echo "$response" | jq -r '.marginSummary.totalMarginUsed // 0')
-    local maint_margin=$(echo "$response" | jq -r '.crossMaintenanceMarginUsed // 0')
-    local withdrawable=$(echo "$response" | jq -r '.withdrawable // 0')
-    local positions_count=$(echo "$response" | jq -r '.assetPositions | length')
+    # Parse data (single jq call for all account-level fields)
+    local parsed_data
+    parsed_data=$(echo "$response" | jq -r '[
+        .marginSummary.accountValue // 0,
+        .marginSummary.totalNtlPos // 0,
+        .marginSummary.totalMarginUsed // 0,
+        .crossMaintenanceMarginUsed // 0,
+        .withdrawable // 0,
+        (.assetPositions | length)
+    ] | @tsv')
+
+    local account_value total_position margin_used maint_margin withdrawable positions_count
+    IFS=$'\t' read -r account_value total_position margin_used maint_margin withdrawable positions_count <<< "$parsed_data"
 
     # Calculate derived values
     local cross_leverage=$(echo "$account_value $total_position" | awk '{if ($1 > 0) printf "%.2f", $2/$1; else print "0.00"}')
@@ -346,10 +386,10 @@ display_formatted() {
     # Determine margin ratio color and alert
     local margin_color="$GREEN"
     local margin_alert=""
-    if (( $(echo "$margin_ratio > 80" | bc -l) )); then
+    if (( $(awk "BEGIN {print ($margin_ratio > 80)}") )); then
         margin_color="$RED"
         margin_alert=" ⚠️  HIGH RISK"
-    elif (( $(echo "$margin_ratio > 50" | bc -l) )); then
+    elif (( $(awk "BEGIN {print ($margin_ratio > 50)}") )); then
         margin_color="$YELLOW"
         margin_alert=" ⚠️  CAUTION"
     fi
@@ -397,52 +437,44 @@ display_formatted() {
     echo -e "${DIM}COIN      SIDE   LEV    SIZE               ENTRY          VALUE           PNL            ROE${NC}"
     echo -e "${DIM}──────────────────────────────────────────────────────────────────────────────────────────────────${NC}"
 
-    # Process each position
-    local total_pnl=0
-    local winners=0
-    local losers=0
+    # Process each position (single jq call extracts all fields)
+    echo "$response" | jq -r '.assetPositions | sort_by(.position.unrealizedPnl | tonumber) | reverse | .[] | [
+        .position.coin,
+        .position.szi,
+        .position.entryPx,
+        .position.positionValue,
+        .position.unrealizedPnl,
+        .position.returnOnEquity,
+        (.position.leverage.value // "?")
+    ] | @tsv' | while IFS=$'\t' read -r coin szi entry_px pos_value pnl roe lev; do
+        # Determine side and colors
+        local side side_color pnl_color pnl_sign roe_color roe_sign
 
-    echo "$response" | jq -r '.assetPositions | sort_by(.position.unrealizedPnl | tonumber) | reverse | .[] | @base64' | while read -r position_b64; do
-        local pos=$(echo "$position_b64" | base64 --decode)
-
-        local coin=$(echo "$pos" | jq -r '.position.coin')
-        local szi=$(echo "$pos" | jq -r '.position.szi')
-        local entry_px=$(echo "$pos" | jq -r '.position.entryPx')
-        local pos_value=$(echo "$pos" | jq -r '.position.positionValue')
-        local pnl=$(echo "$pos" | jq -r '.position.unrealizedPnl')
-        local roe=$(echo "$pos" | jq -r '.position.returnOnEquity')
-        local lev=$(echo "$pos" | jq -r '.position.leverage.value // "?"')
-
-        # Determine side
-        local side="LONG"
-        local side_color="$GREEN"
-        if (( $(echo "$szi < 0" | bc -l) )); then
-            side="SHORT"
-            side_color="$RED"
+        # Side
+        if (( $(awk "BEGIN {print ($szi < 0)}") )); then
+            side="SHORT"; side_color="$RED"
+        else
+            side="LONG"; side_color="$GREEN"
         fi
 
-        # Determine PnL color
-        local pnl_color="$GREEN"
-        local pnl_sign="+"
-        if (( $(echo "$pnl < 0" | bc -l) )); then
-            pnl_color="$RED"
-            pnl_sign=""
+        # PnL color
+        if (( $(awk "BEGIN {print ($pnl < 0)}") )); then
+            pnl_color="$RED"; pnl_sign=""
+        else
+            pnl_color="$GREEN"; pnl_sign="+"
         fi
 
-        # Format ROE
-        local roe_pct=$(echo "$roe" | awk '{printf "%.1f", $1 * 100}')
-        local roe_color="$GREEN"
-        local roe_sign="+"
-        if (( $(echo "$roe < 0" | bc -l) )); then
-            roe_color="$RED"
-            roe_sign=""
+        # ROE color
+        if (( $(awk "BEGIN {print ($roe < 0)}") )); then
+            roe_color="$RED"; roe_sign=""
+        else
+            roe_color="$GREEN"; roe_sign="+"
         fi
 
-        # Format size (absolute value)
-        local abs_size=$(echo "$szi" | awk '{printf "%.4f", ($1 < 0) ? -$1 : $1}')
-
-        # Format numbers
-        local fmt_entry=$(echo "$entry_px" | awk '{printf "%.4f", $1}')
+        # Computed values using awk
+        local abs_size=$(awk "BEGIN {printf \"%.4f\", ($szi < 0) ? -($szi) : $szi}")
+        local roe_pct=$(awk "BEGIN {printf \"%.1f\", $roe * 100}")
+        local fmt_entry=$(awk "BEGIN {printf \"%.4f\", $entry_px}")
         local fmt_value=$(format_number "$pos_value")
         local fmt_pnl=$(format_number "$pnl")
 
@@ -451,10 +483,16 @@ display_formatted() {
             "$coin" "$side" "${lev}x" "$abs_size" "$fmt_entry" "$fmt_value" "$pnl_sign" "$fmt_pnl" "$roe_sign" "$roe_pct"
     done
 
-    # Calculate summary
-    local total_pnl=$(echo "$response" | jq -r '[.assetPositions[].position.unrealizedPnl | tonumber] | add // 0')
-    local winners=$(echo "$response" | jq -r '[.assetPositions[].position.unrealizedPnl | tonumber | select(. > 0)] | add // 0')
-    local losers=$(echo "$response" | jq -r '[.assetPositions[].position.unrealizedPnl | tonumber | select(. < 0)] | add // 0')
+    # Calculate summary (single jq call)
+    local summary_data
+    summary_data=$(echo "$response" | jq -r '[
+        ([.assetPositions[].position.unrealizedPnl | tonumber] | add // 0),
+        ([.assetPositions[].position.unrealizedPnl | tonumber | select(. > 0)] | add // 0),
+        ([.assetPositions[].position.unrealizedPnl | tonumber | select(. < 0)] | add // 0)
+    ] | @tsv')
+
+    local total_pnl winners losers
+    IFS=$'\t' read -r total_pnl winners losers <<< "$summary_data"
 
     local fmt_winners=$(format_number "$winners")
     local fmt_losers=$(format_number "$losers")
@@ -475,7 +513,7 @@ display_formatted() {
     # Net PnL
     local pnl_color="$GREEN"
     local pnl_sign="+"
-    if (( $(echo "$total_pnl < 0" | bc -l) )); then
+    if (( $(awk "BEGIN {print ($total_pnl < 0)}") )); then
         pnl_color="$RED"
         pnl_sign=""
     fi
