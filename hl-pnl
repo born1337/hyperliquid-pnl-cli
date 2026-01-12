@@ -285,6 +285,16 @@ if [[ ! "$ADDRESS" =~ ^0x[a-fA-F0-9]{40}$ ]]; then
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Fetch current mid prices for all assets
+# ══════════════════════════════════════════════════════════════════════════════
+fetch_mid_prices() {
+    curl -s --connect-timeout 10 --max-time 30 \
+        -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d '{"type":"allMids"}' 2>/dev/null
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Fetch data from API with proper error handling
 # ══════════════════════════════════════════════════════════════════════════════
 fetch_data() {
@@ -603,13 +613,17 @@ display_formatted() {
     echo -e "${WHITE}Margin Ratio:${NC}       ${margin_color}${margin_ratio}%${NC}${margin_alert}"
     echo ""
 
+    # Fetch current mid prices
+    local mid_prices
+    mid_prices=$(fetch_mid_prices)
+
     # Positions table
     echo -e "${CYAN}────────────────────────────────────────────────────────────────────────────────────────${NC}"
     echo -e "${WHITE}${BOLD}OPEN POSITIONS (${positions_count})${NC}"
     echo -e "${CYAN}────────────────────────────────────────────────────────────────────────────────────────${NC}"
     echo ""
-    echo -e "${DIM}COIN      SIDE   LEV    SIZE               ENTRY          VALUE           PNL            ROE${NC}"
-    echo -e "${DIM}──────────────────────────────────────────────────────────────────────────────────────────────────${NC}"
+    echo -e "${DIM}COIN      SIDE   LEV    SIZE               ENTRY          CURRENT        VALUE           PNL            ROE${NC}"
+    echo -e "${DIM}─────────────────────────────────────────────────────────────────────────────────────────────────────────────────${NC}"
 
     # Process each position (single jq call extracts all fields)
     echo "$response" | jq -r '.assetPositions | sort_by(.position.unrealizedPnl | tonumber) | reverse | .[] | [
@@ -645,6 +659,13 @@ display_formatted() {
             roe_color="$GREEN"; roe_sign="+"
         fi
 
+        # Get current price from mid prices
+        local current_px=$(echo "$mid_prices" | jq -r --arg coin "$coin" '.[$coin] // "N/A"')
+        local fmt_current="N/A"
+        if [[ "$current_px" != "N/A" && "$current_px" != "null" ]]; then
+            fmt_current=$(awk "BEGIN {printf \"%.2f\", $current_px}")
+        fi
+
         # Computed values using awk (2 decimal places)
         local abs_size=$(awk "BEGIN {printf \"%.2f\", ($szi < 0) ? -($szi) : $szi}")
         local roe_pct=$(awk "BEGIN {printf \"%.2f\", $roe * 100}")
@@ -653,8 +674,8 @@ display_formatted() {
         local fmt_pnl=$(format_number "$pnl")
 
         # Print position row (colors match Hyperliquid UI)
-        printf "${WHITE}%-8s${NC} ${side_color}%-6s${NC} ${DIM}%-6s${NC} ${CYAN}%-18s${NC} \$%-13s \$%-15s ${pnl_color}%s\$%-12s${NC} ${pnl_color}(%s%s%%)${NC}\n" \
-            "$coin" "$side" "${lev}x" "$abs_size" "$fmt_entry" "$fmt_value" "$pnl_sign" "$fmt_pnl" "$roe_sign" "$roe_pct"
+        printf "${WHITE}%-8s${NC} ${side_color}%-6s${NC} ${DIM}%-6s${NC} ${CYAN}%-18s${NC} \$%-13s \$%-13s \$%-15s ${pnl_color}%s\$%-12s${NC} ${pnl_color}(%s%s%%)${NC}\n" \
+            "$coin" "$side" "${lev}x" "$abs_size" "$fmt_entry" "$fmt_current" "$fmt_value" "$pnl_sign" "$fmt_pnl" "$roe_sign" "$roe_pct"
     done
 
     # Calculate summary (single jq call)
